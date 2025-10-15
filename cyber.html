@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Data Dash - 3D Cyber Security Game</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;700&display=swap" rel="stylesheet">
+        <style>
+            body {
+                font-family: 'Exo 2', sans-serif;
+                background-color: #0a0a1a;
+                color: #e0e0e0;
+                overflow: hidden;
+                /* Prevent scrollbars */
+            }
+
+            #gameCanvas {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: block;
+            }
+
+            .overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-direction: column;
+                background: rgba(10, 10, 26, 0.8);
+                backdrop-filter: blur(10px);
+                z-index: 10;
+            }
+
+            .ui-panel {
+                background: rgba(29, 3, 50, 0.7);
+                border: 1px solid #5d1399;
+                border-radius: 1rem;
+                padding: 2rem;
+                box-shadow: 0 0 30px rgba(93, 19, 153, 0.5);
+                max-width: 90%;
+                width: 500px;
+            }
+
+            .brand-purple {
+                color: #5d1399;
+            }
+
+            .brand-red {
+                color: #ed3237;
+            }
+
+            button,
+            .difficulty-btn,
+            .skin-btn {
+                transition: all 0.3s ease;
+            }
+
+            button:hover,
+            .difficulty-btn:hover,
+            .skin-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 20px rgba(237, 50, 55, 0.4);
+            }
+
+            .difficulty-btn.selected {
+                background-color: #ed3237;
+                color: white;
+                box-shadow: 0 0 15px #ed3237;
+            }
+
+            .leaderboard-entry {
+                display: grid;
+                grid-template-columns: 1fr 100px 80px;
+                align-items: center;
+                gap: 1rem;
+                padding: 0.5rem 1rem;
+                border-radius: 0.5rem;
+                margin-bottom: 0.5rem;
+                background: rgba(93, 19, 153, 0.2);
+                text-align: left;
+            }
+
+            .leaderboard-entry:nth-child(odd) {
+                background: rgba(93, 19, 153, 0.3);
+            }
+
+            .loader {
+                border: 4px solid #f3f3f3;
+                border-top: 4px solid #ed3237;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                animation: spin 1s linear infinite;
+            }
+
+            @keyframes spin {
+                0% {
+                    transform: rotate(0deg);
+                }
+
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+
+            #confettiContainer,
+            #glitchOverlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 999;
+                overflow: hidden;
+            }
+
+            .confetti {
+                position: absolute;
+                width: 10px;
+                height: 10px;
+                background-color: #f00;
+                opacity: 0.7;
+                animation: fall 5s linear forwards;
+            }
+
+            @keyframes fall {
+                to {
+                    transform: translateY(100vh) rotate(720deg);
+                    opacity: 0;
+                }
+            }
+
+            #highScoreNotice,
+            .unlock-notice {
+                animation: fadeInOut 4s ease-in-out forwards;
+            }
+
+            @keyframes fadeInOut {
+
+                0%,
+                100% {
+                    opacity: 0;
+                    transform: translateY(10px) scale(0.95);
+                }
+
+                10%,
+                90% {
+                    opacity: 1;
+                    transform: translateY(0) scale(1);
+                }
+            }
+
+            #glitchOverlay.active {
+                animation: glitch 0.5s linear;
+            }
+
+            @keyframes glitch {
+
+                0%,
+                100% {
+                    background: transparent;
+                }
+
+                10%,
+                30%,
+                50%,
+                70%,
+                90% {
+                    background: rgba(255, 0, 0, 0.1);
+                }
+
+                20%,
+                40%,
+                60%,
+                80% {
+                    background: rgba(0, 255, 255, 0.1);
+                }
+            }
+
+            .powerup-icon {
+                display: flex;
+                align-items: center;
+                background: rgba(0, 0, 0, 0.4);
+                padding: 4px 8px;
+                border-radius: 8px;
+            }
+
+            .powerup-icon svg {
+                filter: drop-shadow(0 0 4px currentColor);
+            }
+        </style>
+    </head>
+
+    <body>
+
+        <!-- 3D Game Canvas -->
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="confettiContainer"></div>
+        <div id="glitchOverlay"></div>
+
+        <!-- UI Overlays -->
+        <div id="loadingOverlay" class="overlay">
+            <div class="loader"></div>
+            <p class="mt-4 text-lg">Initializing Secure Connection...</p>
+        </div>
+
+        <div id="startMenu" class="overlay hidden">
+            <div class="ui-panel text-center">
+                <h1 class="text-5xl font-bold mb-2">Data <span class="brand-red">Dash</span></h1>
+                <p class="mb-4 text-gray-300">A Cyber Security Challenge</p>
+
+                <div id="dailyBounty"
+                    class="p-3 mb-4 rounded-lg bg-yellow-900 bg-opacity-40 border border-yellow-500 hidden">
+                    <h3 class="font-bold text-yellow-300">Daily Bounty</h3>
+                    <p id="bountyText" class="text-sm text-yellow-200"></p>
+                </div>
+
+                <div class="mb-4">
+                    <label for="username" class="block mb-2 text-sm font-medium text-gray-300">Enter Your Handle</label>
+                    <input type="text" id="username"
+                        class="bg-gray-900 border border-purple-700 text-white text-sm rounded-lg focus:ring-red-500 focus:border-red-500 block w-full p-2.5"
+                        placeholder="CyberAgent" required>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block mb-2 text-sm font-medium text-gray-300">Select Ship</label>
+                    <div class="flex items-center justify-center space-x-4">
+                        <button id="prevSkinBtn" class="skin-btn bg-gray-700 p-2 rounded-md">&lt;</button>
+                        <span id="skinName" class="font-bold text-lg w-32 text-center">Default</span>
+                        <button id="nextSkinBtn" class="skin-btn bg-gray-700 p-2 rounded-md">&gt;</button>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block mb-2 text-sm font-medium text-gray-300">Select Threat Level</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button class="difficulty-btn bg-gray-700 text-white font-bold py-2 px-3 rounded-lg"
+                            data-difficulty="Rookie Agent">Rookie</button>
+                        <button class="difficulty-btn bg-gray-700 text-white font-bold py-2 px-3 rounded-lg selected"
+                            data-difficulty="Pro Agent">Pro</button>
+                        <button class="difficulty-btn bg-gray-700 text-white font-bold py-2 px-3 rounded-lg"
+                            data-difficulty="Cyber Master">Master</button>
+                    </div>
+                </div>
+
+                <button id="startGameBtn"
+                    class="bg-[#ed3237] text-white font-bold py-3 px-6 rounded-lg w-full mb-4 text-xl">Breach the
+                    System</button>
+
+                <div class="text-left p-3 rounded-lg bg-black bg-opacity-20 mb-4 text-xs">
+                    <h3 class="font-bold text-md mb-1">Gameplay</h3>
+                    <ul class="list-disc list-inside text-gray-300 space-y-1">
+                        <li><span class="font-bold text-white">Arrow Keys/AD:</span> Switch lanes.</li>
+                        <li><span class="font-bold text-blue-400">Collect:</span> Blue cubes score points.</li>
+                        <li><span class="font-bold text-red-500">Avoid:</span> Firewalls, Malware, and Mines.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h2 class="text-xl font-bold mb-2">Top Agents</h2>
+                    <div id="leaderboardDisplay" class="space-y-1 max-h-32 overflow-y-auto text-sm"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="hud" class="hidden"
+            style="position: fixed; top: 20px; left: 20px; right: 20px; z-index: 5; display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+                <span class="text-2xl font-bold">Score: <span id="score" class="text-green-400">0</span></span>
+                <div id="powerupsContainer" class="mt-2 space-y-2"></div>
+            </div>
+            <div id="noticeContainer" class="text-center absolute w-full left-0 top-0 pointer-events-none">
+                <span id="highScoreNotice" class="hidden text-2xl font-bold text-yellow-400">New High Score!</span>
+                <div id="unlockNoticeContainer"></div>
+            </div>
+            <button id="pauseBtn" class="bg-[#5d1399] text-white font-bold py-2 px-4 rounded-lg">Pause</button>
+        </div>
+
+        <div id="pauseMenu" class="overlay hidden">
+            <div class="ui-panel text-center">
+                <h2 class="text-4xl font-bold mb-6">Game Paused</h2>
+                <button id="resumeBtn"
+                    class="bg-[#ed3237] text-white font-bold py-3 px-6 rounded-lg w-full text-xl">Resume
+                    Mission</button>
+            </div>
+        </div>
+
+        <div id="gameOverMenu" class="overlay hidden">
+            <div class="ui-panel text-center">
+                <h2 class="text-5xl font-bold mb-2 brand-red">SYSTEM BREACHED</h2>
+                <p class="text-xl mb-4">Game Over</p>
+                <p class="text-lg mb-6">Your Final Score: <span id="finalScore"
+                        class="font-bold text-green-400">0</span></p>
+                <div id="bountyCompleteNotice"
+                    class="p-3 mb-4 rounded-lg bg-green-900 bg-opacity-50 border border-green-500 hidden"></div>
+                <button id="restartBtn"
+                    class="bg-[#ed3237] text-white font-bold py-3 px-6 rounded-lg w-full mb-6 text-xl">Re-initialize</button>
+                <div>
+                    <h2 class="text-2xl font-bold mb-4">Top Agents</h2>
+                    <div id="gameOverLeaderboard" class="space-y-2 max-h-48 overflow-y-auto"></div>
+                </div>
+            </div>
+        </div>
+
+        <footer
+            style="position: fixed; bottom: 10px; width: 100%; text-align: center; color: rgba(255, 255, 255, 0.4); z-index: 5; display: flex; justify-content: center; align-items: center; gap: 10px;">
+            <img src="http://mainstreetcapltd.com/wp-content/uploads/2025/10/logo-white.png" class="max-h-8" alt="Logo"
+                onerror="this.style.display='none'">
+            <span>Made with love by the IT Team</span>
+        </footer>
+
+        <script type="module">
+            // --- Game Setup ---
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gameCanvas'), antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            const clock = new THREE.Clock();
+
+            // --- Game State & Constants ---
+            const gameState = {
+                status: 'loading', score: 0, speed: 0.2, baseSpeed: 0.2, maxSpeed: 1.2, speedMultiplier: 1, baseSpeedIncrement: 0.0001, speedIncrement: 0.0001, username: '', currentLane: 1, difficulty: 'Pro Agent', highestScore: 0, highScoreBeaten: false,
+                powerups: { shield: { active: false, timer: 0 }, magnet: { active: false, timer: 0 }, slowmo: { active: false, timer: 0 } },
+                currentZone: 0, zoneTransition: { active: false, progress: 0, from: null, to: null },
+                mission: null, missionProgress: {}, selectedSkin: 'Default', unlockedSkins: ['Default']
+            };
+            const lanePositions = [-5, 0, 5];
+            const ZONE_SCORE_THRESHOLD = 5000;
+            const ZONE_THEMES = [
+                { name: "Cyber Veins", fog: 0x0a0a1a, ambient: 0x5d1399, wall: 0x150825 },
+                { name: "Encrypted Stream", fog: 0x051e26, ambient: 0x00ffff, wall: 0x082525 },
+                { name: "Core Processor", fog: 0x2b0f05, ambient: 0xff4500, wall: 0x301010 },
+                { name: "Data Hub", fog: 0x0a210e, ambient: 0x00ff7f, wall: 0x082510 }
+            ];
+
+            // --- DOM Elements ---
+            const loadingOverlay = document.getElementById('loadingOverlay'), startMenu = document.getElementById('startMenu'), hud = document.getElementById('hud'), pauseMenu = document.getElementById('pauseMenu'), gameOverMenu = document.getElementById('gameOverMenu'), startGameBtn = document.getElementById('startGameBtn'), pauseBtn = document.getElementById('pauseBtn'), resumeBtn = document.getElementById('resumeBtn'), restartBtn = document.getElementById('restartBtn'), usernameInput = document.getElementById('username'), scoreEl = document.getElementById('score'), finalScoreEl = document.getElementById('finalScore'), leaderboardDisplay = document.getElementById('leaderboardDisplay'), gameOverLeaderboard = document.getElementById('gameOverLeaderboard'), difficultyBtns = document.querySelectorAll('.difficulty-btn'), confettiContainer = document.getElementById('confettiContainer'), highScoreNotice = document.getElementById('highScoreNotice'), powerupsContainer = document.getElementById('powerupsContainer'), glitchOverlay = document.getElementById('glitchOverlay'), dailyBounty = document.getElementById('dailyBounty'), bountyText = document.getElementById('bountyText'), bountyCompleteNotice = document.getElementById('bountyCompleteNotice'), unlockNoticeContainer = document.getElementById('unlockNoticeContainer'), prevSkinBtn = document.getElementById('prevSkinBtn'), nextSkinBtn = document.getElementById('nextSkinBtn'), skinName = document.getElementById('skinName');
+
+            // --- Sound Effects ---
+            let soundsReady = false;
+            const synth = new Tone.Synth().toDestination();
+            const polySynth = new Tone.PolySynth(Tone.Synth).toDestination();
+            const powerupSound = () => { if (soundsReady) new Tone.Synth().toDestination().triggerAttackRelease("G5", "8n"); };
+            const collectSound = () => { if (soundsReady) synth.triggerAttackRelease("C5", "8n"); };
+            const crashSound = () => { if (soundsReady) polySynth.triggerAttackRelease(["C2", "E2", "G#2"], "0.5"); };
+            const glitchSound = () => { if (soundsReady) new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.005, decay: 0.1, sustain: 0 } }).toDestination().triggerAttackRelease("8n"); };
+            const loop = new Tone.Loop(time => { synth.triggerAttackRelease("C2", "8n", time); }, "2n").start(0);
+            const initAudio = async () => { if (!soundsReady) { await Tone.start(); soundsReady = true; } };
+
+            // --- 3D Objects & Materials ---
+            let player, leftWall, rightWall, floor;
+            const obstacles = [], collectibles = [], powerupObjects = [];
+            const originalPlayerMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 2, metalness: 0.8, roughness: 0.2 });
+            const shieldPlayerMat = new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 3, metalness: 0.8, roughness: 0.2 });
+            const starField = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(Array.from({ length: 3000 }, () => (Math.random() - 0.5) * 1000), 3)), new THREE.PointsMaterial({ color: 0xffffff, size: 0.2 }));
+            const trenchMat = new THREE.MeshStandardMaterial({ color: 0x150825, side: THREE.DoubleSide, wireframe: true });
+
+            // --- Scene & Object Creation ---
+            function createScene() {
+                scene.fog = new THREE.Fog(ZONE_THEMES[0].fog, 10, 150);
+                scene.add(starField);
+                scene.add(new THREE.AmbientLight(ZONE_THEMES[0].ambient, 0.5));
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(0, 1, 0);
+                scene.add(directionalLight);
+
+                const trenchGeo = new THREE.PlaneGeometry(30, 1000, 20, 200);
+                leftWall = new THREE.Mesh(trenchGeo, trenchMat);
+                leftWall.rotation.set(0, Math.PI / 2, -Math.PI / 10);
+                leftWall.position.x = -12;
+                scene.add(leftWall);
+
+                rightWall = new THREE.Mesh(trenchGeo, trenchMat);
+                rightWall.rotation.set(0, -Math.PI / 2, Math.PI / 10);
+                rightWall.position.x = 12;
+                scene.add(rightWall);
+
+                floor = new THREE.Mesh(trenchGeo, trenchMat);
+                floor.rotation.set(-Math.PI / 2, 0, Math.PI);
+                floor.position.y = -8;
+                scene.add(floor);
+
+                camera.position.z = 0;
+                setupSkins(); // This will create the initial player
+            }
+
+            // --- Game Object Management ---
+            const obstacleGeo = new THREE.BoxGeometry(4.5, 4, 0.5), obstacleMat = new THREE.MeshStandardMaterial({ color: 0xed3237, emissive: 0xed3237, emissiveIntensity: 0.5 }), malwareGeo = new THREE.IcosahedronGeometry(1, 0), malwareMat = new THREE.MeshStandardMaterial({ color: 0xed3237, emissive: 0xed3237, emissiveIntensity: 0.5 }), collectibleGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6), collectibleMat = new THREE.MeshStandardMaterial({ color: 0x00aaff, emissive: 0x00aaff, emissiveIntensity: 1 }), glitchMineGeo = new THREE.TorusKnotGeometry(0.5, 0.1, 100, 16), glitchMineMat = new THREE.MeshStandardMaterial({ color: 0xff00ff, emissive: 0xff00ff, wireframe: true });
+            const powerupGeos = { shield: new THREE.SphereGeometry(0.5, 8, 8), magnet: new THREE.TorusGeometry(0.4, 0.15, 8, 16), slowmo: new THREE.ConeGeometry(0.4, 0.8, 8) };
+            const powerupMats = { shield: new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 2, wireframe: true }), magnet: new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0xffff00, emissiveIntensity: 2, wireframe: true }), slowmo: new THREE.MeshStandardMaterial({ color: 0x8a2be2, emissive: 0x8a2be2, emissiveIntensity: 2, wireframe: true }) };
+
+            function spawnObject(isPrewarm = false, zPos = -200) {
+                const lane = Math.floor(Math.random() * 3);
+                const xPos = lanePositions[lane];
+                const rand = Math.random();
+                const canSpawnPowerup = rand < 0.05 && !Object.values(gameState.powerups).some(p => p.active) && !isPrewarm;
+
+                if (canSpawnPowerup) {
+                    const types = Object.keys(powerupGeos);
+                    const type = types[Math.floor(Math.random() * types.length)];
+                    const powerup = new THREE.Mesh(powerupGeos[type], powerupMats[type]);
+                    powerup.position.set(xPos, -4, zPos); powerup.userData = { type: 'powerup', powerupType: type };
+                    powerupObjects.push(powerup); scene.add(powerup);
+                } else if (rand < 0.65) {
+                    const collectible = new THREE.Mesh(collectibleGeo, collectibleMat);
+                    collectible.position.set(xPos, -4, zPos); collectible.userData.type = 'collectible';
+                    collectibles.push(collectible); scene.add(collectible);
+                } else {
+                    let obstacle;
+                    const obsType = Math.random();
+                    if (obsType < 0.1 && !isPrewarm) { // Glitch Mine
+                        obstacle = new THREE.Mesh(glitchMineGeo, glitchMineMat);
+                        obstacle.userData = { type: 'glitchMine', rotationSpeed: new THREE.Vector3(0.02, 0.02, 0) };
+                    } else if (obsType < 0.6) { // Firewall
+                        obstacle = new THREE.Mesh(obstacleGeo, obstacleMat);
+                        if (Math.random() < 0.25) { obstacle.userData.moving = true; obstacle.userData.moveDir = Math.random() < 0.5 ? 1 : -1; }
+                    } else { // Malware
+                        obstacle = new THREE.Mesh(malwareGeo, malwareMat);
+                        obstacle.userData.rotationSpeed = new THREE.Vector3(Math.random() * 0.1, Math.random() * 0.1, 0);
+                        if (Math.random() < 0.2 && !isPrewarm) { // Tracer Worm variant
+                            obstacle.userData.tracer = true;
+                            obstacle.material = malwareMat.clone();
+                            obstacle.material.color.set(0xffa500); // Orange
+                            obstacle.material.emissive.set(0xffa500);
+                        }
+                    }
+                    obstacle.position.set(xPos, -4, zPos);
+                    obstacle.userData.type = obstacle.userData.type || 'obstacle';
+                    obstacles.push(obstacle); scene.add(obstacle);
+                }
+            }
+
+            // --- Leaderboard & High Score ---
+            function getLeaderboard() { return JSON.parse(localStorage.getItem('dataDashLeaderboard') || '[]'); }
+            function saveToLeaderboard(name, score, difficulty) {
+                let board = getLeaderboard();
+                const playerIndex = board.findIndex(entry => entry.name === name);
+                if (playerIndex > -1) {
+                    if (score > board[playerIndex].score) {
+                        board[playerIndex].score = score;
+                        board[playerIndex].difficulty = difficulty;
+                    }
+                } else {
+                    board.push({ name, score, difficulty });
+                }
+                board.sort((a, b) => b.score - a.score).splice(10);
+                localStorage.setItem('dataDashLeaderboard', JSON.stringify(board));
+            }
+            function displayLeaderboard() {
+                const board = getLeaderboard();
+                const html = board.map((entry, index) => `
+                <div class="leaderboard-entry">
+                    <span class="truncate">${index + 1}. ${entry.name}</span>
+                    <span class="text-sm text-yellow-400">${entry.difficulty}</span>
+                    <span class="font-bold text-green-400 text-right">${entry.score}</span>
+                </div>`).join('');
+                const placeholder = '<p class="text-gray-400">No scores yet. Be the first!</p>';
+                leaderboardDisplay.innerHTML = html || placeholder;
+                gameOverLeaderboard.innerHTML = html || placeholder;
+            }
+
+
+            // --- Game Logic: Progression, Skins, Missions ---
+            const SKINS = { 'Default': { geo: new THREE.OctahedronGeometry(0.5, 0) }, 'Stealth': { geo: new THREE.BoxGeometry(0.8, 0.8, 0.8), mat: new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.1 }) }, 'Gladiator': { geo: new THREE.ConeGeometry(0.5, 1, 4) }, 'Gold': { mat: new THREE.MeshStandardMaterial({ color: 0xFFD700, emissive: 0xccab00, metalness: 1, roughness: 0.2 }) } };
+            const UNLOCK_CONDITIONS = { 'Stealth': { key: 'totalScore', value: 25000, text: 'Reach 25,000 Total Score' }, 'Gladiator': { key: 'longestRun', value: 120, text: 'Survive 2 Minutes' }, 'Gold': { key: 'totalCollectibles', value: 500, text: 'Collect 500 Cubes' } };
+            const MISSIONS = [{ type: 'collect', amount: 100, text: (a) => `Collect ${a} data cubes`, reward: 5000 }, { type: 'powerup', use: 'shield', amount: 3, text: (a) => `Use the Shield power-up ${a} times`, reward: 7500 }, { type: 'survive', amount: 90, text: (a) => `Survive for ${a} seconds`, reward: 10000 }];
+
+            function getGameStats() { return JSON.parse(localStorage.getItem('dataDashStats') || '{"totalScore":0, "totalCollectibles":0, "longestRun":0}'); }
+            function saveGameStats(stats) { localStorage.setItem('dataDashStats', JSON.stringify(stats)); }
+
+            function setupSkins() {
+                if (player) scene.remove(player);
+                const skin = SKINS[gameState.selectedSkin];
+                player = new THREE.Mesh(skin.geo || SKINS['Default'].geo, skin.mat || originalPlayerMat);
+                scene.add(player);
+            }
+
+            function setupSkinSelector() {
+                gameState.unlockedSkins = JSON.parse(localStorage.getItem('dataDashSkins') || '["Default"]');
+                let currentIndex = gameState.unlockedSkins.indexOf(gameState.selectedSkin);
+                if (currentIndex === -1) currentIndex = 0;
+                gameState.selectedSkin = gameState.unlockedSkins[currentIndex];
+                skinName.textContent = gameState.selectedSkin;
+
+                const cycle = (dir) => {
+                    currentIndex = (currentIndex + dir + gameState.unlockedSkins.length) % gameState.unlockedSkins.length;
+                    gameState.selectedSkin = gameState.unlockedSkins[currentIndex];
+                    skinName.textContent = gameState.selectedSkin;
+                    setupSkins();
+                };
+                prevSkinBtn.onclick = () => cycle(-1);
+                nextSkinBtn.onclick = () => cycle(1);
+            }
+
+            function checkUnlocks() {
+                const stats = getGameStats();
+                let newUnlock = false;
+                Object.keys(UNLOCK_CONDITIONS).forEach(skin => {
+                    if (!gameState.unlockedSkins.includes(skin)) {
+                        const cond = UNLOCK_CONDITIONS[skin];
+                        if (stats[cond.key] >= cond.value) {
+                            gameState.unlockedSkins.push(skin);
+                            newUnlock = true;
+                            showUnlockNotice(`'${skin}' Ship Unlocked!`);
+                        }
+                    }
+                });
+                if (newUnlock) localStorage.setItem('dataDashSkins', JSON.stringify(gameState.unlockedSkins));
+            }
+
+            function showUnlockNotice(text) {
+                const notice = document.createElement('div');
+                notice.className = 'unlock-notice text-lg font-bold text-cyan-400 mt-2';
+                notice.textContent = text;
+                unlockNoticeContainer.appendChild(notice);
+                setTimeout(() => notice.remove(), 4000);
+            }
+
+            function setupDailyMission() {
+                const today = new Date().toISOString().split('T')[0];
+                const savedMission = JSON.parse(localStorage.getItem('dataDashMission') || '{}');
+
+                const createAndSaveNewMission = () => {
+                    const newMissionTemplate = MISSIONS[Math.floor(Math.random() * MISSIONS.length)];
+                    gameState.mission = { ...newMissionTemplate, date: today, completed: false };
+                    localStorage.setItem('dataDashMission', JSON.stringify(gameState.mission));
+                };
+
+                if (savedMission.date === today) {
+                    const missionTemplate = MISSIONS.find(m => m.type === savedMission.type && (m.use || null) === (savedMission.use || null));
+                    if (missionTemplate) {
+                        gameState.mission = { ...savedMission, text: missionTemplate.text };
+                    } else {
+                        createAndSaveNewMission();
+                    }
+                } else {
+                    createAndSaveNewMission();
+                }
+
+                if (gameState.mission && !gameState.mission.completed) {
+                    bountyText.textContent = gameState.mission.text(gameState.mission.amount);
+                    dailyBounty.classList.remove('hidden');
+                } else {
+                    dailyBounty.classList.add('hidden');
+                }
+            }
+
+            function checkMissionCompletion() {
+                if (!gameState.mission || gameState.mission.completed) return;
+                const m = gameState.mission, p = gameState.missionProgress;
+                let completed = false;
+                if (m.type === 'collect' && p.collected >= m.amount) completed = true;
+                if (m.type === 'powerup' && p.powerupsUsed[m.use] >= m.amount) completed = true;
+                if (m.type === 'survive' && p.timeSurvived >= m.amount) completed = true;
+
+                if (completed) {
+                    gameState.mission.completed = true;
+                    localStorage.setItem('dataDashMission', JSON.stringify(gameState.mission));
+                    localStorage.setItem('dataDashBountyBonus', gameState.mission.reward);
+                    bountyCompleteNotice.innerHTML = `<h3 class="font-bold text-green-300">Bounty Complete!</h3><p class="text-sm text-green-200">+${gameState.mission.reward} bonus score on next run!</p>`;
+                    bountyCompleteNotice.classList.remove('hidden');
+                }
+            }
+
+            // --- Core Game Flow ---
+            function resetGame() {
+                gameState.score = 0;
+                const bonus = parseInt(localStorage.getItem('dataDashBountyBonus') || '0');
+                if (bonus > 0) {
+                    gameState.score = bonus;
+                    localStorage.removeItem('dataDashBountyBonus');
+                }
+
+                const diffMap = { 'Rookie Agent': [0.15, 0.00005], 'Pro Agent': [0.2, 0.0001], 'Cyber Master': [0.25, 0.00015] };
+                [gameState.baseSpeed, gameState.baseSpeedIncrement] = diffMap[gameState.difficulty] || diffMap['Pro Agent'];
+                gameState.speed = gameState.baseSpeed;
+                gameState.speedIncrement = gameState.baseSpeedIncrement;
+                gameState.currentLane = 1; gameState.highScoreBeaten = false; gameState.currentZone = 0;
+                Object.keys(gameState.powerups).forEach(k => { gameState.powerups[k] = { active: false, timer: 0 }; });
+                gameState.missionProgress = { collected: 0, powerupsUsed: { shield: 0 }, timeSurvived: 0 };
+
+                scoreEl.textContent = gameState.score;
+                player.position.set(lanePositions[gameState.currentLane], -4, -5);
+                [...obstacles, ...collectibles, ...powerupObjects].forEach(obj => scene.remove(obj));
+                obstacles.length = 0; collectibles.length = 0; powerupObjects.length = 0;
+                confettiContainer.innerHTML = ''; bountyCompleteNotice.classList.add('hidden');
+
+                for (let i = 0; i < 20; i++) spawnObject(true, -20 - (i * 25));
+                spawnTimer = 0;
+                updateZone(true); // Force zone reset
+            }
+
+            function startGame() {
+                const username = usernameInput.value.trim();
+                if (!username) { alert("Please enter a handle to start."); return; }
+                gameState.username = username; localStorage.setItem('dataDashUsername', username);
+                initAudio(); Tone.Transport.start();
+                const board = getLeaderboard();
+                gameState.highestScore = board.length > 0 ? board[0].score : 0;
+                resetGame(); gameState.status = 'playing';
+                startMenu.classList.add('hidden'); hud.classList.remove('hidden'); hud.style.display = 'flex';
+            }
+
+            function pauseGame() { if (gameState.status !== 'playing') return; gameState.status = 'paused'; pauseMenu.classList.remove('hidden'); hud.classList.add('hidden'); Tone.Transport.pause(); }
+            function resumeGame() { if (gameState.status !== 'paused') return; gameState.status = 'playing'; pauseMenu.classList.add('hidden'); hud.classList.remove('hidden'); hud.style.display = 'flex'; Tone.Transport.start(); }
+            function gameOver() {
+                gameState.status = 'gameover'; crashSound(); Tone.Transport.stop();
+                const stats = getGameStats();
+                stats.totalScore += gameState.score;
+                stats.totalCollectibles += gameState.missionProgress.collected;
+                if (gameState.missionProgress.timeSurvived > stats.longestRun) stats.longestRun = gameState.missionProgress.timeSurvived;
+                saveGameStats(stats);
+                checkUnlocks(); checkMissionCompletion();
+                saveToLeaderboard(gameState.username, gameState.score, gameState.difficulty);
+                displayLeaderboard();
+                finalScoreEl.textContent = gameState.score;
+                gameOverMenu.classList.remove('hidden'); hud.classList.add('hidden');
+            }
+
+            function triggerGlitchEffect() {
+                glitchSound();
+                glitchOverlay.classList.add('active');
+                setTimeout(() => glitchOverlay.classList.remove('active'), 500);
+            }
+
+            // --- Main Animation Loop ---
+            const playerBBox = new THREE.Box3(), objectBBox = new THREE.Box3();
+            let spawnTimer = 0;
+
+            function animate() {
+                requestAnimationFrame(animate);
+                const deltaTime = clock.getDelta();
+
+                if (gameState.status !== 'playing') {
+                    if (player) player.rotation.y += 0.01 * deltaTime * 60; // Keep rotation consistent
+                    renderer.render(scene, camera);
+                    return;
+                }
+
+                gameState.missionProgress.timeSurvived += deltaTime;
+                updatePowerups(deltaTime); updateZone();
+
+                const currentSpeed = gameState.speed * gameState.speedMultiplier;
+                player.position.x += (lanePositions[gameState.currentLane] - player.position.x) * 0.15;
+
+                spawnTimer += deltaTime;
+                if (spawnTimer > 0.4) { spawnObject(); spawnTimer = 0; }
+
+                playerBBox.setFromObject(player);
+
+                [...obstacles, ...collectibles, ...powerupObjects].forEach((obj) => {
+                    obj.position.z += currentSpeed;
+                    if (obj.userData.rotationSpeed) { obj.rotation.x += obj.userData.rotationSpeed.x; obj.rotation.y += obj.userData.rotationSpeed.y; }
+                    if (obj.userData.type === 'powerup') { obj.rotation.y += 0.015; }
+                    if (obj.userData.moving) { obj.position.x += obj.userData.moveDir * 0.05; if (Math.abs(obj.position.x) > 5.5) obj.userData.moveDir *= -1; }
+                    if (obj.userData.tracer) { obj.position.x += (lanePositions[gameState.currentLane] - obj.position.x) * 0.01; }
+
+                    if (obj.position.z > player.position.z) {
+                        objectBBox.setFromObject(obj);
+                        if (playerBBox.intersectsBox(objectBBox)) {
+                            if (obj.userData.type === 'collectible') {
+                                collectSound(); gameState.score += 100; scene.remove(obj); collectibles.splice(collectibles.indexOf(obj), 1); gameState.missionProgress.collected++;
+                            } else if (obj.userData.type === 'powerup') {
+                                activatePowerup(obj.userData.powerupType); scene.remove(obj); powerupObjects.splice(powerupObjects.indexOf(obj), 1);
+                            } else if (obj.userData.type === 'glitchMine') {
+                                triggerGlitchEffect(); scene.remove(obj); obstacles.splice(obstacles.indexOf(obj), 1);
+                            } else if (!gameState.powerups.shield.active) {
+                                gameOver();
+                            }
+                        }
+                    }
+                    if (obj.position.z > camera.position.z + 10) {
+                        scene.remove(obj);
+                        // more robust removal
+                        const arrays = [obstacles, collectibles, powerupObjects];
+                        for (const arr of arrays) {
+                            const index = arr.indexOf(obj);
+                            if (index > -1) {
+                                arr.splice(index, 1);
+                                break;
+                            }
+                        }
+                    }
+                });
+
+                scoreEl.textContent = gameState.score;
+                if (gameState.speed < gameState.maxSpeed) gameState.speed += gameState.speedIncrement;
+                if (!gameState.highScoreBeaten && gameState.score > gameState.highestScore && gameState.highestScore > 0) { gameState.highScoreBeaten = true; triggerConfetti(); }
+
+                camera.fov = 75 + (gameState.speed / gameState.maxSpeed) * 20; camera.updateProjectionMatrix();
+                renderer.render(scene, camera);
+            }
+
+            // --- Confetti Effect ---
+            function triggerConfetti() {
+                highScoreNotice.classList.remove('hidden');
+                setTimeout(() => highScoreNotice.classList.add('hidden'), 4000);
+                const colors = ['#5d1399', '#ed3237', '#00ffff', '#ffff00'];
+                for (let i = 0; i < 100; i++) {
+                    const confetto = document.createElement('div');
+                    confetto.className = 'confetti';
+                    confetto.style.left = Math.random() * 100 + 'vw';
+                    confetto.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                    confetto.style.animationDelay = Math.random() * 2 + 's';
+                    confetto.style.transform = `scale(${Math.random() * 0.5 + 0.5})`;
+                    confettiContainer.appendChild(confetto);
+                    setTimeout(() => confetto.remove(), 5000);
+                }
+            }
+
+            // --- Helpers & Listeners ---
+            function updateZone(force = false) {
+                const newZoneIndex = Math.floor(gameState.missionProgress.collected / 50) % ZONE_THEMES.length; // Zone change based on cubes
+                if ((newZoneIndex !== gameState.currentZone && !gameState.zoneTransition.active) || force) {
+                    gameState.zoneTransition = { active: true, progress: 0, from: ZONE_THEMES[gameState.currentZone], to: ZONE_THEMES[newZoneIndex] };
+                    gameState.currentZone = newZoneIndex;
+                }
+                if (gameState.zoneTransition.active) {
+                    const zt = gameState.zoneTransition;
+                    zt.progress = Math.min(zt.progress + 0.01, 1);
+                    const currentWall = new THREE.Color(zt.from.wall).lerp(new THREE.Color(zt.to.wall), zt.progress);
+                    trenchMat.color.set(currentWall);
+                    scene.fog.color.set(new THREE.Color(zt.from.fog).lerp(new THREE.Color(zt.to.fog), zt.progress));
+                    scene.ambientLight = new THREE.AmbientLight(new THREE.Color(zt.from.ambient).lerp(new THREE.Color(zt.to.ambient), zt.progress), 0.5);
+                    if (zt.progress >= 1) zt.active = false;
+                }
+            }
+            function handleKeyDown(e) { if (gameState.status !== 'playing') return; if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') { if (gameState.currentLane > 0) gameState.currentLane--; } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') { if (gameState.currentLane < 2) gameState.currentLane++; } }
+            function activatePowerup(type) {
+                powerupSound();
+                const timers = { shield: 7, magnet: 10, slowmo: 8 };
+                gameState.powerups[type] = { active: true, timer: timers[type] };
+                if (type === 'shield') {
+                    player.material = shieldPlayerMat;
+                    if (gameState.missionProgress.powerupsUsed.shield) gameState.missionProgress.powerupsUsed.shield++; else gameState.missionProgress.powerupsUsed.shield = 1;
+                }
+            }
+            function updatePowerups(deltaTime) {
+                if (gameState.powerups.shield.active) {
+                    gameState.powerups.shield.timer -= deltaTime;
+                    if (gameState.powerups.shield.timer <= 0) {
+                        gameState.powerups.shield.active = false;
+                        const skin = SKINS[gameState.selectedSkin];
+                        player.material = skin.mat || originalPlayerMat;
+                    }
+                }
+                if (gameState.powerups.magnet.active) {
+                    gameState.powerups.magnet.timer -= deltaTime;
+                    collectibles.forEach(c => { if (player.position.distanceTo(c.position) < 15) { c.position.lerp(player.position, 0.1); } });
+                    if (gameState.powerups.magnet.timer <= 0) gameState.powerups.magnet.active = false;
+                }
+                if (gameState.powerups.slowmo.active) {
+                    gameState.powerups.slowmo.timer -= deltaTime;
+                    gameState.speedMultiplier = 0.5;
+                    if (gameState.powerups.slowmo.timer <= 0) {
+                        gameState.powerups.slowmo.active = false;
+                    }
+                } else {
+                    gameState.speedMultiplier = 1;
+                }
+                updateHud();
+            }
+
+            function updateHud() {
+                const icons = {
+                    shield: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-shield-shaded text-green-400" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 14.933 1.171 9.73V5c0-.52.08-1.021.234-1.485l.054-.15a.5.5 0 0 1 .476-.345h12.132a.5.5 0 0 1 .476.345l.054.15C14.748 3.979 14.83 4.48 14.83 5v4.73L8 14.933zM8 15.933a1 1 0 0 0 .78-.375l6.929-6.333A1.01 1.01 0 0 0 16 8.23V5c0-1.105-.37-2.09-.981-2.812a2.02 2.02 0 0 0-.713-.63C13.623 1.056 12.33 1 8 1s-5.623.056-6.306.558a2.02 2.02 0 0 0-.713.63C.37 2.91.001 3.895 0 5v3.23c0 .332.12.653.337.894l6.929 6.333A1 1 0 0 0 8 15.933z"/><path d="M8.002 1.11c3.834.05 6.09.283 6.693.553a1 1 0 0 1 .314-.315c.27.602.503 1.87.49 3.248-.014 1.53-.298 3.102-1.332 4.545-1.033 1.44-2.585 2.56-4.475 3.424a.5.5 0 0 1-.45-.002C7.03 13.18 5.478 12.05 4.444 10.61C3.41 9.177 3.126 7.606 3.112 6.076c-.013-1.378.22-2.646.49-3.248a1 1 0 0 1 .314-.315c.603-.27 2.86-.502 6.693-.553z"/></svg>`,
+                    magnet: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-magnet-fill text-yellow-400" viewBox="0 0 16 16"><path d="M15 12h-4v3h4v-3ZM5 12H1v3h4v-3ZM0 8a8 8 0 1 1 16 0v4a.5.5 0 0 1-.5.5h-5a.5.5 0 0 1-.5-.5V8a2 2 0 1 0-4 0v4a.5.5 0 0 1-.5.5h-5a.5.5 0 0 1-.5-.5V8Z"/></svg>`,
+                    slowmo: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-hourglass-split text-purple-400" viewBox="0 0 16 16"><path d="M2.5 15a.5.5 0 1 1 0-1h11a.5.5 0 0 1 0 1h-11zm2-13v1c0 .537.12 1.045.337 1.5h6.326c.216-.455.337-.963.337-1.5V2h-7zm3 6.25a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-1 0V9.5a.5.5 0 0 1 .5-.5zm-3.55.8a.5.5 0 0 0-.45.3L3.24 11.2a.5.5 0 1 0 .9.3L5.5 9.652a.5.5 0 0 0-.45-.802zm5.5.3a.5.5 0 0 0 .45-.3l1.25-1.852a.5.5 0 1 0-.9-.3L10.5 8.848a.5.5 0 0 0 .45.802zM2.5 1a.5.5 0 0 0 0 1h11a.5.5 0 0 0 0-1h-11z"/></svg>`
+                };
+                powerupsContainer.innerHTML = Object.keys(gameState.powerups).filter(k => gameState.powerups[k].active).map(k => `
+                <div class="powerup-icon">${icons[k]} <span class="ml-2 font-bold text-white">${Math.ceil(gameState.powerups[k].timer)}s</span></div>
+            `).join('');
+            }
+
+            // --- Initialization ---
+            function init() {
+                createScene();
+                usernameInput.value = localStorage.getItem('dataDashUsername') || '';
+                displayLeaderboard(); setupDailyMission(); setupSkinSelector();
+                loadingOverlay.classList.add('hidden'); startMenu.classList.remove('hidden'); gameState.status = 'menu';
+                animate();
+            }
+
+            // --- Event Listeners ---
+            window.addEventListener('keydown', handleKeyDown);
+            startGameBtn.addEventListener('click', startGame);
+            pauseBtn.addEventListener('click', pauseGame);
+            resumeBtn.addEventListener('click', resumeGame);
+            restartBtn.addEventListener('click', () => { gameOverMenu.classList.add('hidden'); startMenu.classList.remove('hidden'); setupDailyMission(); });
+            difficultyBtns.forEach(btn => btn.addEventListener('click', () => { difficultyBtns.forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); gameState.difficulty = btn.dataset.difficulty; }));
+            window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+
+            init();
+        </script>
+    </body>
+
+</html>
