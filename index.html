@@ -214,10 +214,12 @@
 </head>
 
 <body>
+    <!-- 3D Game Canvas -->
     <canvas id="gameCanvas"></canvas>
     <div id="confettiContainer"></div>
     <div id="glitchOverlay"></div>
 
+    <!-- UI Overlays -->
     <div id="loadingOverlay" class="overlay">
         <div class="loader"></div>
         <p class="mt-4 text-lg">Initializing Secure Connection...</p>
@@ -330,6 +332,25 @@
     </footer>
 
     <script type="module">
+        // --- Firebase Integration ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, addDoc, query, orderBy, limit, where, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAyGVFrhJbWn5w-TosL8e_RejMUDHeMlFc",
+  authDomain: "cydash-game.firebaseapp.com",
+  projectId: "cydash-game",
+  storageBucket: "cydash-game.firebasestorage.app",
+  messagingSenderId: "600686300211",
+  appId: "1:600686300211:web:0885fd8937201a05a66746",
+  measurementId: "G-PW9WYYBJ8Z"
+};
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+
         // --- Game Setup ---
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -453,23 +474,59 @@
         }
 
         // --- Leaderboard & High Score ---
-        function getLeaderboard() { return JSON.parse(localStorage.getItem('dataDashLeaderboard') || '[]'); }
-        function saveToLeaderboard(name, score, difficulty) {
-            let board = getLeaderboard();
-            const playerIndex = board.findIndex(entry => entry.name === name);
-            if (playerIndex > -1) {
-                if (score > board[playerIndex].score) {
-                    board[playerIndex].score = score;
-                    board[playerIndex].difficulty = difficulty;
-                }
-            } else {
-                board.push({ name, score, difficulty });
+        async function getLeaderboard() {
+            try {
+                const leaderboardCol = collection(db, 'leaderboard');
+                const q = query(leaderboardCol, orderBy('score', 'desc'), limit(10));
+                const snapshot = await getDocs(q);
+                return snapshot.docs.map(doc => doc.data());
+            } catch (error) {
+                console.error("Error getting leaderboard: ", error);
+                leaderboardDisplay.innerHTML = `<p class="text-red-400">Could not connect to leaderboard.</p>`;
+                gameOverLeaderboard.innerHTML = `<p class="text-red-400">Could not connect to leaderboard.</p>`;
+                return []; // Return empty array on error
             }
-            board.sort((a, b) => b.score - a.score).splice(10);
-            localStorage.setItem('dataDashLeaderboard', JSON.stringify(board));
         }
-        function displayLeaderboard() {
-            const board = getLeaderboard();
+
+        async function saveToLeaderboard(name, score, difficulty) {
+            try {
+                const leaderboardCol = collection(db, 'leaderboard');
+
+                // Check if a score for this user already exists
+                const q = query(leaderboardCol, where("name", "==", name));
+                const querySnapshot = await getDocs(q);
+
+                if (!querySnapshot.empty) {
+                    // User exists, check if the new score is higher
+                    const existingDoc = querySnapshot.docs[0];
+                    if (score > existingDoc.data().score) {
+                        // If higher, update the existing document
+                        const docRef = doc(db, "leaderboard", existingDoc.id);
+                        await updateDoc(docRef, { score, difficulty });
+                    }
+                    // If the new score is not higher, do nothing.
+                } else {
+                    // This is a new user, add their score to the leaderboard
+                    await addDoc(leaderboardCol, { name, score, difficulty });
+                }
+
+                // After a write, periodically clean up the collection to keep only the top 10
+                const allScoresQuery = query(leaderboardCol, orderBy('score', 'desc'));
+                const allScoresSnapshot = await getDocs(allScoresQuery);
+                if (allScoresSnapshot.size > 10) {
+                    // If we have more than 10 scores, delete the oldest/lowest ones
+                    for (let i = 10; i < allScoresSnapshot.size; i++) {
+                        const docToDelete = allScoresSnapshot.docs[i];
+                        await deleteDoc(doc(db, 'leaderboard', docToDelete.id));
+                    }
+                }
+            } catch (error) {
+                console.error("Error saving to leaderboard: ", error);
+            }
+        }
+
+        async function displayLeaderboard() {
+            const board = await getLeaderboard();
             const html = board.map((entry, index) => `
                 <div class="leaderboard-entry">
                     <span class="truncate">${index + 1}. ${entry.name}</span>
@@ -603,19 +660,19 @@
             spawnTimer = 0;
             updateZone(true); // Force zone reset
         }
-        function startGame() {
+        async function startGame() {
             const username = usernameInput.value.trim();
             if (!username) { alert("Please enter a handle to start."); return; }
             gameState.username = username; localStorage.setItem('dataDashUsername', username);
             initAudio(); Tone.Transport.start();
-            const board = getLeaderboard();
+            const board = await getLeaderboard();
             gameState.highestScore = board.length > 0 ? board[0].score : 0;
             resetGame(); gameState.status = 'playing';
             startMenu.classList.add('hidden'); hud.classList.remove('hidden'); hud.style.display = 'flex';
         }
         function pauseGame() { if (gameState.status !== 'playing') return; gameState.status = 'paused'; pauseMenu.classList.remove('hidden'); hud.classList.add('hidden'); Tone.Transport.pause(); }
         function resumeGame() { if (gameState.status !== 'paused') return; gameState.status = 'playing'; pauseMenu.classList.add('hidden'); hud.classList.remove('hidden'); hud.style.display = 'flex'; Tone.Transport.start(); }
-        function gameOver() {
+        async function gameOver() {
             gameState.status = 'gameover'; crashSound(); Tone.Transport.stop();
             const stats = getGameStats();
             stats.totalScore += gameState.score;
@@ -623,8 +680,8 @@
             if (gameState.missionProgress.timeSurvived > stats.longestRun) stats.longestRun = gameState.missionProgress.timeSurvived;
             saveGameStats(stats);
             checkUnlocks(); checkMissionCompletion();
-            saveToLeaderboard(gameState.username, gameState.score, gameState.difficulty);
-            displayLeaderboard();
+            await saveToLeaderboard(gameState.username, gameState.score, gameState.difficulty);
+            await displayLeaderboard();
             finalScoreEl.textContent = gameState.score;
             gameOverMenu.classList.remove('hidden'); hud.classList.add('hidden');
         }
@@ -812,11 +869,15 @@
         }
         
         // --- Initialization ---
-        function init() {
+        async function init() {
             createScene();
             usernameInput.value = localStorage.getItem('dataDashUsername') || '';
-            displayLeaderboard(); setupDailyMission(); setupSkinSelector();
-            loadingOverlay.classList.add('hidden'); startMenu.classList.remove('hidden'); gameState.status = 'menu';
+            await displayLeaderboard(); 
+            setupDailyMission(); 
+            setupSkinSelector();
+            loadingOverlay.classList.add('hidden'); 
+            startMenu.classList.remove('hidden'); 
+            gameState.status = 'menu';
             animate();
         }
 
@@ -828,12 +889,16 @@
         startGameBtn.addEventListener('click', startGame);
         pauseBtn.addEventListener('click', pauseGame);
         resumeBtn.addEventListener('click', resumeGame);
-        restartBtn.addEventListener('click', () => { gameOverMenu.classList.add('hidden'); startMenu.classList.remove('hidden'); setupDailyMission(); });
+        restartBtn.addEventListener('click', async () => { 
+            gameOverMenu.classList.add('hidden'); 
+            startMenu.classList.remove('hidden'); 
+            setupDailyMission(); 
+            await displayLeaderboard();
+        });
         difficultyBtns.forEach(btn => btn.addEventListener('click', () => { difficultyBtns.forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); gameState.difficulty = btn.dataset.difficulty; }));
         window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
 
         init();
     </script>
 </body>
-
 </html>
