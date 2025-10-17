@@ -25,7 +25,7 @@ The game is designed with responsive controls for a seamless experience on any d
         * ⏳ **Slow-Mo:** Temporarily slow down the game's speed.
 * **Ship Unlocks:** Achieve certain milestones (like reaching a cumulative score or surviving for a specific duration) to unlock new ship skins, including 'Stealth', 'Gladiator', and 'Gold' variants.
 * **Daily Bounties:** Check in each day for a new mission, such as collecting a certain number of cubes or using a specific power-up. Completing the bounty grants a significant score bonus on your next run.
-* **Local Leaderboard:** The game saves the top 10 scores in the browser's local storage, allowing you to compete against yourself and others who use the same computer.
+* **Leaderboard:** The game saves the top 10 scores, allowing you to compete against yourself and others.
 
 ## Technical Stack
 CyDash is built entirely with web-native technologies and is contained within a single HTML file for maximum portability.
